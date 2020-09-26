@@ -18,9 +18,10 @@ my_ibbq = "b4:52:a9:b5:7a:05"
 #btle.Debugging = True
 
 class MyDelegate(btle.DefaultDelegate):
-    def __init__(self):
+    def __init__(self, ibbq):
         btle.DefaultDelegate.__init__(self)
         # ... initialise here
+        self.ibbq = ibbq
 
     def handleNotification(self, cHandle, data):
         #print("Notification from handle", cHandle)
@@ -51,7 +52,7 @@ class ibbq:
         # the case when it disconnects in the middle of discovery
         while True:
             try:
-                self.devices = self.scanner.scan(10.0)
+                self.devices = self.scanner.scan(20.0)
                 for dev in self.devices:
                     #print("Device %s (%s), RSSI=%d dB" % (dev.addr, dev.addrType, dev.rssi))
                     #for (adtype, desc, value) in dev.getScanData():
@@ -76,18 +77,24 @@ class ibbq:
         print("Failed to connect.")
         return False
         
-    def login(self, handles):
+    def prepare(self):
+        self.dev.setDelegate( MyDelegate(self) )
+        # The fff0 service is the main service
+        svc = ibbq.dev.getServiceByUUID(btle.UUID(0xfff0))
+        self.handles = svc.getCharacteristics()
+
+    def login(self):
         print("Logging in...")
         login_message = bytearray([0x21, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0xb8, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00])
-        handles[ACCOUNT_VERIFY].write(login_message, withResponse = True)
+        self.handles[ACCOUNT_VERIFY].write(login_message, withResponse = True)
 
-    def enable_realtime_data(self, handles):
+    def enable_realtime_data(self):
         print("Enabling realtime data...")
         enable_message = bytearray([0x0B, 0x01, 0x00, 0x00, 0x00, 0x00])
-        handles[SETTINGS_DATA].write(enable_message, withResponse = True)
+        self.handles[SETTINGS_DATA].write(enable_message, withResponse = True)
 
-    def enable_temp_notifications(self, handles):
-        self.dev.writeCharacteristic(handles[REALTIME_DATA].getHandle()+1, bytearray([0x01, 0x00]), withResponse = True)
+    def enable_temp_notifications(self):
+        self.dev.writeCharacteristic(self.handles[REALTIME_DATA].getHandle()+1, bytearray([0x01, 0x00]), withResponse = True)
 
 
 ibbq = ibbq()
@@ -103,17 +110,11 @@ if ibbq.scan():
         #for svc in ibbq.dev.services:
         #    print(str(svc))
 
-        ibbq.dev.setDelegate( MyDelegate() )
 
-    # The fff0 service is the main service
-        svc = ibbq.dev.getServiceByUUID(btle.UUID(0xfff0))
-        handles = svc.getCharacteristics()
-#        for ch in handles:
-#            print(ch.getHandle(), ch.uuid)
-
-        ibbq.login(handles)
-        ibbq.enable_realtime_data(handles)
-        ibbq.enable_temp_notifications(handles)
+        ibbq.prepare()
+        ibbq.login()
+        ibbq.enable_realtime_data()
+        ibbq.enable_temp_notifications()
 
 # Main loop --------
 
