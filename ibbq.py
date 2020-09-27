@@ -2,11 +2,17 @@ from bluepy import btle
 import time
 import paho.mqtt.client as paho
 
+
+control_msg = "idle"
+temperature = 0
+
 broker="homeserver.local"
 #define callback
 def on_message(client, userdata, message):
-    time.sleep(1)
-    print("received message =",str(message.payload.decode("utf-8")))
+    global control_msg
+    msg = str(message.payload.decode("utf-8"))
+    print("received message =", msg)
+    control_msg = msg
 
 client= paho.Client("client-001")
 # Bind function to callback
@@ -24,10 +30,11 @@ class MyDelegate(btle.DefaultDelegate):
         self.ibbq = ibbq
 
     def handleNotification(self, cHandle, data):
+        global temperature
         #print("Notification from handle", cHandle)
         if(cHandle == 0x30):
-            temp = (data[0] + data[1]*256) / 10.0
-            print("Temperature", temp)
+            temperature = (data[0] + data[1]*256) / 10.0
+            #print("Temperature", temperature)
         # ... perhaps check cHandle
         # ... process 'data'
 
@@ -39,10 +46,13 @@ SETTINGS_DATA   = 4
 
 class ibbq:
     def __init__(self):
+        self.scanner = btle.Scanner()
+        self.reset()
+
+    def reset(self):
         self.connected = False
         self.handles = []
-        self.devices = []
-        self.scanner = btle.Scanner()
+        self.devices = None
         self.dev = None
 
     def scan(self):
@@ -78,50 +88,121 @@ class ibbq:
         return False
         
     def prepare(self):
-        self.dev.setDelegate( MyDelegate(self) )
-        # The fff0 service is the main service
-        svc = ibbq.dev.getServiceByUUID(btle.UUID(0xfff0))
-        self.handles = svc.getCharacteristics()
+        try:
+            self.dev.setDelegate( MyDelegate(self) )
+            # The fff0 service is the main service
+            svc = ibbq.dev.getServiceByUUID(btle.UUID(0xfff0))
+            self.handles = svc.getCharacteristics()
+            return True
+        except:
+            self.reset()
+            return False
 
     def login(self):
         print("Logging in...")
         login_message = bytearray([0x21, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0xb8, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00])
-        self.handles[ACCOUNT_VERIFY].write(login_message, withResponse = True)
+        try:
+            self.handles[ACCOUNT_VERIFY].write(login_message, withResponse = True)
+            return True
+        except:
+            self.reset()
+            return False
 
     def enable_realtime_data(self):
         print("Enabling realtime data...")
         enable_message = bytearray([0x0B, 0x01, 0x00, 0x00, 0x00, 0x00])
-        self.handles[SETTINGS_DATA].write(enable_message, withResponse = True)
+        try:
+            self.handles[SETTINGS_DATA].write(enable_message, withResponse = True)
+            return True
+        except:
+            self.reset()
+            return False
 
     def enable_temp_notifications(self):
-        self.dev.writeCharacteristic(self.handles[REALTIME_DATA].getHandle()+1, bytearray([0x01, 0x00]), withResponse = True)
+        try:
+            self.dev.writeCharacteristic(self.handles[REALTIME_DATA].getHandle()+1, bytearray([0x01, 0x00]), withResponse = True)
+            return True
+        except:
+            self.reset()
+            return False
+
+    def wait_for_notification(self):
+        try:
+            return self.dev.waitForNotifications(5.0)
+        except:
+            self.reset()
+            return False
 
 
 ibbq = ibbq()
 
-# Scan for the iBBQ device
-print("Scanning...")
-if ibbq.scan():
-    print("iBBQ found")
+print("connecting to broker ", broker)
+client.connect(broker)
+client.loop_start()
+print("subscribing ")
+client.subscribe("ibbq/control")
 
-    print("Connecting...")
-    if ibbq.connect():
-        #print("Services...")
-        #for svc in ibbq.dev.services:
-        #    print(str(svc))
+ibbq_state = "idle"
 
+while True:
+    if control_msg == "scan":
+        print("Scanning...")
+        if ibbq.scan():
+            print("iBBQ found")
+            client.publish("ibbq/response", "found")
+        else:
+            print("iBBQ not found")
+            client.publish("ibbq/response", "not found")
+        control_msg = "idle"
 
-        ibbq.prepare()
-        ibbq.login()
-        ibbq.enable_realtime_data()
-        ibbq.enable_temp_notifications()
+    if control_msg == "connect":
+        print("Connecting...")
+        if ibbq.connect():
+            print("iBBQ connected")
+            client.publish("ibbq/response", "connected")
+            ibbq_state = "connected"
+        else:
+            print("iBBQ not connected")
+            client.publish("ibbq/response", "not connected")
+        control_msg = "idle"
 
-# Main loop --------
+    if control_msg == "start":
+        print("Starting...")
+        control_msg = "idle"
+        if not ibbq.prepare():
+            print("Prepare failed")
+            client.publish("ibbq/response", "not connected")
+            ibbq_state = "idle"
+            continue
+        if not ibbq.login():
+            print("Login failed")
+            client.publish("ibbq/response", "not connected")
+            ibbq_state = "idle"
+            continue
+        if not ibbq.enable_temp_notifications():
+            print("Enable temp notifications failed")
+            client.publish("ibbq/response", "not connected")
+            ibbq_state = "idle"
+            continue
+        if not ibbq.enable_realtime_data():
+            print("Enable realtime data failed")
+            client.publish("ibbq/response", "not connected")
+            ibbq_state = "idle"
+            continue
+        client.publish("ibbq/response", "started")
+        ibbq_state = "running"
 
-        while True:
-            if ibbq.dev.waitForNotifications(10.0):
-                # handleNotification() was called
-                continue
+    if control_msg != "idle":
+        client.publish("ibbq/response", "unknown command: " + control_msg)
+        control_msg = "idle"
 
-            print("Timeout!")
-            # Perhaps do something else here
+    if ibbq_state == "running":
+        if(ibbq.wait_for_notification()):
+            client.publish("ibbq/temp", temperature)
+        else:
+            print("Realtime data failed")
+            client.publish("ibbq/response", "not connected")
+            ibbq_state = "idle"
+
+    else:
+        time.sleep(1.0)
