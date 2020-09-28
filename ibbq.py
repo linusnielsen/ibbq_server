@@ -2,9 +2,12 @@ from bluepy import btle
 import time
 import paho.mqtt.client as paho
 
+MAX_RECONNECTION_ATTEMPTS = 10
 
 control_msg = "idle"
+ibbq_state = "idle"
 temperature = 0
+reconnection_attempt = 0
 
 broker="homeserver.local"
 #define callback
@@ -19,9 +22,9 @@ client= paho.Client("client-001")
 client.on_message=on_message
 
  
-my_ibbq = "b4:52:a9:b5:7a:05"
+#my_ibbq = "b4:52:a9:b5:7a:05"
 
-#btle.Debugging = True
+btle.Debugging = True
 
 class MyDelegate(btle.DefaultDelegate):
     def __init__(self, ibbq):
@@ -142,7 +145,13 @@ client.loop_start()
 print("subscribing ")
 client.subscribe("ibbq/control")
 
-ibbq_state = "idle"
+def set_state(state):
+    global ibbq_state
+    print("state: " + ibbq_state + " -> " + state)
+    ibbq_state = state
+    client.publish("ibbq/state", state)
+
+set_state("idle")
 
 while True:
     if control_msg == "scan":
@@ -156,41 +165,31 @@ while True:
         control_msg = "idle"
 
     if control_msg == "connect":
-        print("Connecting...")
-        if ibbq.connect():
-            print("iBBQ connected")
-            client.publish("ibbq/response", "connected")
-            ibbq_state = "connected"
-        else:
-            print("iBBQ not connected")
-            client.publish("ibbq/response", "not connected")
         control_msg = "idle"
 
-    if control_msg == "start":
-        print("Starting...")
-        control_msg = "idle"
-        if not ibbq.prepare():
+        set_state("connecting")
+
+        print("Connecting...")
+        client.publish("ibbq/response", "connecting")
+        if not ibbq.connect():
+            print("Connection failed")
+            client.publish("ibbq/response", "not connected")
+        elif not ibbq.prepare():
             print("Prepare failed")
             client.publish("ibbq/response", "not connected")
-            ibbq_state = "idle"
-            continue
-        if not ibbq.login():
+        elif not ibbq.login():
             print("Login failed")
             client.publish("ibbq/response", "not connected")
-            ibbq_state = "idle"
-            continue
-        if not ibbq.enable_temp_notifications():
+        elif not ibbq.enable_temp_notifications():
             print("Enable temp notifications failed")
             client.publish("ibbq/response", "not connected")
-            ibbq_state = "idle"
-            continue
-        if not ibbq.enable_realtime_data():
+        elif not ibbq.enable_realtime_data():
             print("Enable realtime data failed")
             client.publish("ibbq/response", "not connected")
-            ibbq_state = "idle"
-            continue
-        client.publish("ibbq/response", "started")
-        ibbq_state = "running"
+        else:
+            client.publish("ibbq/response", "running")
+            set_state("running")
+            reconnection_attempt = 0
 
     if control_msg != "idle":
         client.publish("ibbq/response", "unknown command: " + control_msg)
@@ -201,8 +200,15 @@ while True:
             client.publish("ibbq/temp", temperature)
         else:
             print("Realtime data failed")
-            client.publish("ibbq/response", "not connected")
-            ibbq_state = "idle"
+            set_state("connecting")
+    elif ibbq_state == "connecting":
+        # Force a reconnection
+        if reconnection_attempt < MAX_RECONNECTION_ATTEMPTS:
+            reconnection_attempt += 1
+            control_msg = "connect"
+            time.sleep(5.0)
+        else:
+            set_state("idle")
 
     else:
         time.sleep(1.0)
