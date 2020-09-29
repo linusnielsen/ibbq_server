@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'mqtt_wrapper.dart';
 
 void main() {
   runApp(MyApp());
@@ -51,6 +52,31 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
+  String ibbqState = '';
+  String ibbqTemp = '';
+  MQTTClientWrapper mqttClientWrapper;
+
+  void setup() {
+    mqttClientWrapper = MQTTClientWrapper(() => onConnect(),
+        (newState) => gotNewState(newState), (newTemp) => gotNewTemp(newTemp));
+    mqttClientWrapper.prepareMqttClient();
+  }
+
+  void onConnect() {
+    print('connected!');
+  }
+
+  void gotNewState(String state) {
+    setState(() {
+      this.ibbqState = state;
+    });
+  }
+
+  void gotNewTemp(String temp) {
+    setState(() {
+      this.ibbqTemp = temp;
+    });
+  }
 
   void _incrementCounter() {
     setState(() {
@@ -61,6 +87,13 @@ class _MyHomePageState extends State<MyHomePage> {
       // called again, and so nothing would appear to happen.
       _counter++;
     });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    setup();
   }
 
   @override
@@ -102,6 +135,14 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             Text(
               '$_counter',
+              style: Theme.of(context).textTheme.headline4,
+            ),
+            Text(
+              ibbqState,
+              style: Theme.of(context).textTheme.headline4,
+            ),
+            Text(
+              ibbqTemp,
               style: Theme.of(context).textTheme.headline4,
             ),
           ],
