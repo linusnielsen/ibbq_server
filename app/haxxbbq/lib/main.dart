@@ -53,7 +53,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   String ibbqState = 'unknown';
-  String ibbqTemp = '0.0';
+  String ibbqTemp = '0';
   String targetTemp = '60';
   MQTTClientWrapper mqttClientWrapper;
 
@@ -110,6 +110,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 onPressed: () {
                   if (ibbqState == "idle") {
                     mqttClientWrapper.sendControlMessage("connect");
+                  }
+                  if (ibbqState == "running") {
+                    mqttClientWrapper.sendControlMessage("disconnect");
                   }
                 },
                 child: Text(
