@@ -36,7 +36,7 @@ class MyDelegate(btle.DefaultDelegate):
         global temperature
         #print("Notification from handle", cHandle)
         if(cHandle == 0x30):
-            temperature = (data[0] + data[1]*256) / 10.0
+            temperature = (data[0] + data[1]*256) // 10
             #print("Temperature", temperature)
         # ... perhaps check cHandle
         # ... process 'data'
