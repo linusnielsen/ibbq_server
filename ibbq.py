@@ -22,9 +22,9 @@ client= paho.Client("client-001")
 client.on_message=on_message
 
  
-#my_ibbq = "b4:52:a9:b5:7a:05"
+my_ibbq = "b4:52:a9:b5:7a:05"
 
-btle.Debugging = True
+#btle.Debugging = True
 
 class MyDelegate(btle.DefaultDelegate):
     def __init__(self, ibbq):
@@ -83,6 +83,11 @@ class ibbq:
             print("Connection attempt %d..." % (attempt+1))
             try:
                 self.dev = btle.Peripheral(my_ibbq)
+                self.prepare()
+                self.login()
+                self.enable_realtime_data()
+                self.enable_temp_notifications()
+
                 return True
             except:
                 pass
@@ -91,43 +96,23 @@ class ibbq:
         return False
         
     def prepare(self):
-        try:
-            self.dev.setDelegate( MyDelegate(self) )
-            # The fff0 service is the main service
-            svc = ibbq.dev.getServiceByUUID(btle.UUID(0xfff0))
-            self.handles = svc.getCharacteristics()
-            return True
-        except:
-            self.reset()
-            return False
+        self.dev.setDelegate( MyDelegate(self) )
+        # The fff0 service is the main service
+        svc = ibbq.dev.getServiceByUUID(btle.UUID(0xfff0))
+        self.handles = svc.getCharacteristics()
 
     def login(self):
         print("Logging in...")
         login_message = bytearray([0x21, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0xb8, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00])
-        try:
-            self.handles[ACCOUNT_VERIFY].write(login_message, withResponse = True)
-            return True
-        except:
-            self.reset()
-            return False
+        self.handles[ACCOUNT_VERIFY].write(login_message, withResponse = True)
 
     def enable_realtime_data(self):
         print("Enabling realtime data...")
         enable_message = bytearray([0x0B, 0x01, 0x00, 0x00, 0x00, 0x00])
-        try:
-            self.handles[SETTINGS_DATA].write(enable_message, withResponse = True)
-            return True
-        except:
-            self.reset()
-            return False
+        self.handles[SETTINGS_DATA].write(enable_message, withResponse = True)
 
     def enable_temp_notifications(self):
-        try:
-            self.dev.writeCharacteristic(self.handles[REALTIME_DATA].getHandle()+1, bytearray([0x01, 0x00]), withResponse = True)
-            return True
-        except:
-            self.reset()
-            return False
+        self.dev.writeCharacteristic(self.handles[REALTIME_DATA].getHandle()+1, bytearray([0x01, 0x00]), withResponse = True)
 
     def wait_for_notification(self):
         try:
@@ -171,25 +156,13 @@ while True:
 
         print("Connecting...")
         client.publish("ibbq/response", "connecting")
-        if not ibbq.connect():
-            print("Connection failed")
-            client.publish("ibbq/response", "not connected")
-        elif not ibbq.prepare():
-            print("Prepare failed")
-            client.publish("ibbq/response", "not connected")
-        elif not ibbq.login():
-            print("Login failed")
-            client.publish("ibbq/response", "not connected")
-        elif not ibbq.enable_temp_notifications():
-            print("Enable temp notifications failed")
-            client.publish("ibbq/response", "not connected")
-        elif not ibbq.enable_realtime_data():
-            print("Enable realtime data failed")
-            client.publish("ibbq/response", "not connected")
-        else:
+        if ibbq.connect():
             client.publish("ibbq/response", "running")
             set_state("running")
             reconnection_attempt = 0
+        else:
+            print("Connection failed")
+            client.publish("ibbq/response", "not connected")
 
     if control_msg != "idle":
         client.publish("ibbq/response", "unknown command: " + control_msg)
