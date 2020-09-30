@@ -24,6 +24,10 @@ class MQTTClientWrapper {
     _subscribeToTopics();
   }
 
+  void sendControlMessage(String msg) {
+    _publishMessage(msg);
+  }
+
   Future<void> _connectClient() async {
     try {
       print('MQTTClientWrapper::Mosquitto client connecting....');
@@ -74,6 +78,7 @@ class MQTTClientWrapper {
         if (msg != null) onTempReceivedCallback(msg);
       }
     });
+    _publishMessage("ping");
   }
 
   void _publishMessage(String message) {

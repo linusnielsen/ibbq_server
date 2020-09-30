@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'mqtt_wrapper.dart';
 
 void main() {
@@ -27,7 +28,7 @@ class MyApp extends StatelessWidget {
         // closer together (more dense) than on mobile platforms.
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: MyHomePage(title: 'Flutter Demo Home Page'),
+      home: MyHomePage(title: 'Haxx iBBQ'),
     );
   }
 }
@@ -51,9 +52,9 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-  String ibbqState = '';
-  String ibbqTemp = '';
+  String ibbqState = 'unknown';
+  String ibbqTemp = '0.0';
+  String targetTemp = '60';
   MQTTClientWrapper mqttClientWrapper;
 
   void setup() {
@@ -78,14 +79,9 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  void _incrementCounter() {
+  void setTargetTemp(String temp) {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      this.targetTemp = temp;
     });
   }
 
@@ -106,10 +102,24 @@ class _MyHomePageState extends State<MyHomePage> {
     // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
+          // Here we take the value from the MyHomePage object that was created by
+          // the App.build method, and use it to set our appbar title.
+          title: Text(widget.title),
+          actions: <Widget>[
+            FlatButton(
+                onPressed: () {
+                  if (ibbqState == "idle") {
+                    mqttClientWrapper.sendControlMessage("connect");
+                  }
+                },
+                child: Text(
+                  ibbqState,
+                  style: Theme.of(context)
+                      .primaryTextTheme
+                      .button
+                      .copyWith(color: Colors.white),
+                ))
+          ]),
       body: Center(
         // Center is a layout widget. It takes a single child and positions it
         // in the middle of the parent.
@@ -131,28 +141,101 @@ class _MyHomePageState extends State<MyHomePage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
-            Text(
-              ibbqState,
-              style: Theme.of(context).textTheme.headline4,
+              "Temperature",
+              style: Theme.of(context).textTheme.headline5,
             ),
             Text(
               ibbqTemp,
-              style: Theme.of(context).textTheme.headline4,
+              style: Theme.of(context).textTheme.headline2,
             ),
+            Text(
+              "Target temperature",
+              style: Theme.of(context).textTheme.headline5,
+            ),
+            GestureDetector(
+                onTap: () async {
+                  String _name;
+                  _name = await Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) {
+                        return TextEntry(
+                          type: TextInputType.number,
+                          title: "Target temperature",
+                          defaultText: targetTemp,
+                        );
+                      },
+                    ),
+                  );
+                  if (_name != null) {
+                    setTargetTemp(_name);
+                  }
+                },
+                child: Text(
+                  targetTemp,
+                  style: Theme.of(context).textTheme.headline3,
+                )),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
+  }
+}
+
+class TextEntry extends StatefulWidget {
+  final String title;
+  final String defaultText;
+  final TextInputType type;
+
+  const TextEntry(
+      {Key key,
+      @required this.type,
+      @required this.title,
+      @required this.defaultText})
+      : super(key: key);
+
+  _TextEntryState createState() => _TextEntryState();
+}
+
+class _TextEntryState extends State<TextEntry> {
+  List<TextInputFormatter> formatters;
+  TextEditingController inputController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.type == TextInputType.number) {
+      formatters = [WhitelistingTextInputFormatter.digitsOnly];
+    } else {
+      formatters = [];
+    }
+    inputController.text = widget.defaultText;
+    inputController.selection = TextSelection(
+        baseOffset: widget.defaultText.length,
+        extentOffset: widget.defaultText.length);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+      ),
+      body: Column(children: <Widget>[
+        TextField(
+            autofocus: true,
+            keyboardType: widget.type,
+            inputFormatters: formatters,
+            controller: inputController,
+            decoration: InputDecoration(
+              labelText: widget.title,
+            )),
+        RaisedButton(
+            child: Text("OK"),
+            onPressed: () {
+              Navigator.of(context).pop(inputController.value.text);
+            }),
+      ]),
+    );
+  }
+
+  void dispose() {
+    inputController.dispose();
+    super.dispose();
   }
 }
