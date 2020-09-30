@@ -139,6 +139,9 @@ def set_state(state):
 set_state("idle")
 
 while True:
+    if control_msg == "ping":
+        set_state(ibbq_state)
+
     if control_msg == "scan":
         print("Scanning...")
         if ibbq.scan():
