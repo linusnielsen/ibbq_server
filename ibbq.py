@@ -95,6 +95,14 @@ class ibbq:
         print("Failed to connect.")
         return False
         
+    def disconnect(self):
+        try:
+            self.dev.disconnect()
+            self.dev = None
+            return True
+        except:
+            return False
+
     def prepare(self):
         self.dev.setDelegate( MyDelegate(self) )
         # The fff0 service is the main service
@@ -166,6 +174,11 @@ while True:
         else:
             print("Connection failed")
             client.publish("ibbq/response", "not connected")
+
+    if control_msg == "disconnect":
+        control_msg = "idle"
+        ibbq.disconnect()
+        set_state("idle")
 
     if control_msg != "idle":
         client.publish("ibbq/response", "unknown command: " + control_msg)
